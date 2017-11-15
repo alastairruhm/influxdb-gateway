@@ -32,7 +32,7 @@ type Sender struct {
 	gzip        bool
 	precision   string
 	consistency string
-	Logger      zap.Logger
+	Logger      *zap.Logger
 }
 
 type SenderConfig struct {
@@ -92,7 +92,7 @@ func NewSender(c SenderConfig) (*Sender, error) {
 	}, nil
 }
 
-func (s *Sender) WritePoints(database, retentionPolicy string, consistencyLevel models.ConsistencyLevel, points []models.Point) error {
+func (s *Sender) WritePointsPrivileged(database, retentionPolicy string, consistencyLevel models.ConsistencyLevel, points []models.Point) error {
 	go func() {
 		var b bytes.Buffer
 		if s.gzip {

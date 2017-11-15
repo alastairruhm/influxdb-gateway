@@ -6,9 +6,11 @@ import (
 	"os/signal"
 	"syscall"
 
+	"go.uber.org/zap/zapcore"
+
 	"go.uber.org/zap"
 
-	"github.com/pingliu/influxdb-gateway/gateway"
+	"github.com/alastairruhm/influxdb-gateway/gateway"
 
 	lumberjack "gopkg.in/natefinch/lumberjack.v2"
 )
@@ -16,7 +18,7 @@ import (
 var (
 	configFilePath string
 	logFilePath    string
-	logger         zap.Logger
+	logger         *zap.Logger
 )
 
 func init() {
@@ -24,14 +26,36 @@ func init() {
 	flag.StringVar(&logFilePath, "log-file-path", "/var/log/influxdb-gateway.log", "log file path")
 	flag.Parse()
 
+	// zap log config
+	highPriority := zap.LevelEnablerFunc(func(lvl zapcore.Level) bool {
+		return lvl >= zapcore.ErrorLevel
+	})
+	lowPriority := zap.LevelEnablerFunc(func(lvl zapcore.Level) bool {
+		return lvl < zapcore.ErrorLevel
+	})
+
+	consoleDebugging := zapcore.Lock(os.Stdout)
+	consoleErrors := zapcore.Lock(os.Stderr)
+	consoleEncoder := zapcore.NewConsoleEncoder(zap.NewDevelopmentEncoderConfig())
+
+	jsonEncoder := zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig())
+
+	// ref: https://github.com/uber-go/zap/blob/master/FAQ.md#does-zap-support-log-rotation
+	// lumberjack.Logger is already safe for concurrent use, so we don't need to
+	// lock it.
+	w := zapcore.AddSync(&lumberjack.Logger{
+		Filename:   logFilePath,
+		MaxSize:    100,
+		MaxBackups: 5,
+		MaxAge:     7,
+	})
+
 	logger = zap.New(
-		zap.NewTextEncoder(),
-		zap.Output(zap.AddSync(&lumberjack.Logger{
-			Filename:   logFilePath,
-			MaxSize:    100,
-			MaxBackups: 5,
-			MaxAge:     7,
-		})),
+		zapcore.NewTee(
+			zapcore.NewCore(consoleEncoder, consoleErrors, highPriority),
+			zapcore.NewCore(consoleEncoder, consoleDebugging, lowPriority),
+			zapcore.NewCore(jsonEncoder, w, highPriority),
+		),
 	)
 }
 
